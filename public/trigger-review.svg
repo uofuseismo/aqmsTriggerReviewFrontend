@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AQMS Trigger Review">
+  <title>AQMS Trigger Review</title>
+  <!--
+    The duty-review seismogram, in Granite Peak rather than Utah Red, so the
+    two apps can be told apart in a tab strip. White on #4F6A74 is 5.8:1.
+  -->
+  <rect width="32" height="32" rx="7" fill="#4F6A74"/>
+  <path d="M3.5 17 H10 L13.5 8.5 L18.5 24 L22 14.5 H28.5"
+        fill="none" stroke="#FFFFFF" stroke-width="2.8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
