@@ -28,15 +28,23 @@ const WaveformChart = lazy(() =>
 const ORDER_KEY = 'trigger-review:trace-order'
 
 /**
+ * Peak time unless the analyst has chosen otherwise: it is what analysts
+ * reach for, since it shows moveout across the network at a glance.
+ */
+const DEFAULT_ORDER: TraceOrder = 'peakTime'
+
+/**
  * The analyst's last choice of order, so it holds from one trigger to the
  * next and across reloads. Storage can be missing or refuse (private
  * windows), and then it is simply the default every time.
+ *
+ * Only an explicit Station is honoured: nothing stored means the default.
  */
 function readOrder(): TraceOrder {
   try {
-    return window.localStorage.getItem(ORDER_KEY) === 'peakTime' ? 'peakTime' : 'station'
+    return window.localStorage.getItem(ORDER_KEY) === 'station' ? 'station' : DEFAULT_ORDER
   } catch {
-    return 'station'
+    return DEFAULT_ORDER
   }
 }
 
@@ -49,8 +57,8 @@ function writeOrder(order: TraceOrder) {
 }
 
 const ORDERS: { value: TraceOrder; label: string }[] = [
-  { value: 'station', label: 'Station' },
   { value: 'peakTime', label: 'Peak time' },
+  { value: 'station', label: 'Station' },
 ]
 
 export interface WaveformPanelProps {

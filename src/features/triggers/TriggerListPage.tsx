@@ -72,13 +72,16 @@ export function TriggerListPage() {
         </Box>
       ) : (
         // Narrow content, so the table is held to its own width rather than
-        // stretched across a wide screen with the columns miles apart.
+        // stretched across a wide screen with the columns miles apart, and
+        // centred in the space that leaves.
         <Box
           borderWidth="1px"
           rounded="lg"
           overflow="hidden"
           bg="bg.panel"
+          width="full"
           maxW={{ md: '32rem' }}
+          mx="auto"
         >
           <TriggerTable triggers={visible} />
         </Box>

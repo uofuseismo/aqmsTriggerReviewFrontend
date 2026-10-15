@@ -169,13 +169,13 @@ export interface Trace {
  * A trigger has no location, so there is no distance to sort by - the order
  * a record section normally takes. Two stand-ins:
  *
+ * - `peakTime` (the default): by when each trace reaches its largest
+ *   amplitude. For a local event the nearest stations peak first, so the
+ *   moveout reads as a diagonal down the section; a teleseism peaks nearly
+ *   everywhere at once; noise has no pattern at all. A glitch can claim a
+ *   trace's peak, so this is a way of looking, not a measurement.
  * - `station`: alphabetical. Predictable; a station is always in the same
  *   place from one trigger to the next.
- * - `peakTime`: by when each trace reaches its largest amplitude. For a local
- *   event the nearest stations peak first, so the moveout reads as a
- *   diagonal down the section; a teleseism peaks nearly everywhere at once;
- *   noise has no pattern at all. A glitch can claim a trace's peak, so this
- *   is a way of looking, not a measurement.
  */
 export type TraceOrder = 'station' | 'peakTime'
 
