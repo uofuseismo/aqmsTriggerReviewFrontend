@@ -12,10 +12,14 @@ import {
 } from '@chakra-ui/react'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { LuZoomOut } from 'react-icons/lu'
+import { LuX, LuZoomOut } from 'react-icons/lu'
+import { Tooltip } from '../../components/ui/Tooltip'
+import { distanceKm } from '../stations/stations'
+import { useStations } from '../stations/useStations'
+import { LaneMenu } from './LaneMenu'
 import { AXIS_HEIGHT, LANE_HEIGHT } from './laneHeight'
 import { useWaveforms } from './useWaveforms'
-import { buildRecordSection, type TraceOrder } from './waveforms'
+import { buildRecordSection, channelStationKey, type TraceOrder } from './waveforms'
 
 /**
  * Chart.js is ~60 KB gzipped and nobody on the trigger list needs it, so it
@@ -26,6 +30,7 @@ const WaveformChart = lazy(() =>
 )
 
 const ORDER_KEY = 'trigger-review:trace-order'
+const ROOT_KEY = 'trigger-review:root-station'
 
 /**
  * Peak time unless the analyst has chosen otherwise: it is what analysts
@@ -38,19 +43,34 @@ const DEFAULT_ORDER: TraceOrder = 'peakTime'
  * next and across reloads. Storage can be missing or refuse (private
  * windows), and then it is simply the default every time.
  *
- * Only an explicit Station is honoured: nothing stored means the default.
+ * Only an explicit Station or Distance is honoured: nothing stored means
+ * the default.
  */
 function readOrder(): TraceOrder {
   try {
-    return window.localStorage.getItem(ORDER_KEY) === 'station' ? 'station' : DEFAULT_ORDER
+    const stored = window.localStorage.getItem(ORDER_KEY)
+    return stored === 'station' || stored === 'distance' ? stored : DEFAULT_ORDER
   } catch {
     return DEFAULT_ORDER
   }
 }
 
-function writeOrder(order: TraceOrder) {
+/**
+ * The root station, "NET.STA". Remembered like the order, so an analyst
+ * watching one corner of the network keeps it from trigger to trigger.
+ */
+function readRoot(): string | null {
   try {
-    window.localStorage.setItem(ORDER_KEY, order)
+    return window.localStorage.getItem(ROOT_KEY)
+  } catch {
+    return null
+  }
+}
+
+function remember(key: string, value: string | null) {
+  try {
+    if (value === null) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, value)
   } catch {
     // Not remembered; nothing else depends on it.
   }
@@ -59,6 +79,7 @@ function writeOrder(order: TraceOrder) {
 const ORDERS: { value: TraceOrder; label: string }[] = [
   { value: 'peakTime', label: 'Peak time' },
   { value: 'station', label: 'Station' },
+  { value: 'distance', label: 'Distance' },
 ]
 
 export interface WaveformPanelProps {
@@ -73,7 +94,11 @@ export interface WaveformPanelProps {
 
 export function WaveformPanel({ triggerId, controlsSlot = null }: WaveformPanelProps) {
   const { channels, loading, error, reload } = useWaveforms(triggerId)
+  const { locations, loading: stationsLoading, error: stationsError } = useStations()
   const [order, setOrder] = useState<TraceOrder>(readOrder)
+  const [rootKey, setRootKey] = useState<string | null>(readRoot)
+  /** Each lane's vertical centre on screen, from the chart, for the lane menus. */
+  const [laneCentres, setLaneCentres] = useState<number[]>([])
   const resetRef = useRef<(() => void) | null>(null)
   const [canReset, setCanReset] = useState(false)
   /** Zoomed or panned away from the full record - something to reset. */
@@ -92,7 +117,41 @@ export function WaveformPanel({ triggerId, controlsSlot = null }: WaveformPanelP
     return () => observer.disconnect()
   }, [chartBox])
 
-  const traces = useMemo(() => buildRecordSection(channels, order), [channels, order])
+  /*
+    The remembered root applies only to a trigger that station recorded.
+
+    It is remembered so an analyst watching one area keeps it from trigger
+    to trigger - but on a trigger without that station, a root tag and a
+    column of distances measured from a trace that is not there read as a
+    mistake. So there it simply lies dormant: no tag, no distances, the
+    default order. The next trigger that does include it picks it up again,
+    and choosing a new root on any trigger replaces it.
+  */
+  const activeRoot =
+    rootKey !== null && channels.some((channel) => channelStationKey(channel) === rootKey)
+      ? rootKey
+      : null
+
+  // Distance from the root to every station in this section.
+  const distances = useMemo(() => {
+    const root = activeRoot === null ? undefined : locations.get(activeRoot)
+    if (root === undefined) return undefined
+    const byStation = new Map<string, number>()
+    for (const channel of channels) {
+      const key = channelStationKey(channel)
+      const location = locations.get(key)
+      if (location !== undefined) byStation.set(key, distanceKm(root, location))
+    }
+    return byStation
+  }, [activeRoot, locations, channels])
+
+  // Distance needs a root with a known location; until then, the default.
+  const effectiveOrder: TraceOrder =
+    order === 'distance' && distances === undefined ? DEFAULT_ORDER : order
+  const traces = useMemo(
+    () => buildRecordSection(channels, effectiveOrder, distances),
+    [channels, effectiveOrder, distances],
+  )
 
   const onReady = useCallback((reset: () => void) => {
     resetRef.current = reset
@@ -101,8 +160,35 @@ export function WaveformPanel({ triggerId, controlsSlot = null }: WaveformPanelP
 
   const chooseOrder = (next: TraceOrder) => {
     setOrder(next)
-    writeOrder(next)
+    remember(ORDER_KEY, next)
   }
+
+  const setRoot = (key: string) => {
+    setRootKey(key)
+    remember(ROOT_KEY, key)
+    // Choosing a root is asking for the distance order.
+    chooseOrder('distance')
+  }
+
+  const clearRoot = () => {
+    setRootKey(null)
+    remember(ROOT_KEY, null)
+    if (order === 'distance') chooseOrder(DEFAULT_ORDER)
+  }
+
+  /** Why Distance cannot be chosen yet, or null when it can. */
+  const distanceBlocked =
+    distances !== undefined
+      ? null
+      : stationsError !== null
+        ? `Station locations could not be loaded: ${stationsError}`
+        : stationsLoading
+          ? 'Station locations are still loading.'
+          : activeRoot !== null
+            ? `No location is known for the root station, ${activeRoot}.`
+            : rootKey !== null
+              ? `The root station, ${rootKey}, did not record this trigger. Choose another from the ⋮ beside any station.`
+              : 'Choose a root station first, from the ⋮ beside any station.'
 
   const unfiltered = traces.filter((trace) => trace.channel.partiallyUnfiltered)
 
@@ -145,20 +231,46 @@ export function WaveformPanel({ triggerId, controlsSlot = null }: WaveformPanelP
           Order
         </Text>
         <ButtonGroup size="xs" variant="outline" attached aria-labelledby="trace-order-label">
-          {ORDERS.map((option) => (
-            <Button
-              key={option.value}
-              aria-pressed={order === option.value}
-              // Solid for the chosen one: `subtle` against `outline` read
-              // backwards, the white button looking like the selected one.
-              variant={order === option.value ? 'solid' : 'outline'}
-              colorPalette="gray"
-              onClick={() => chooseOrder(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
+          {ORDERS.map((option) => {
+            const blocked = option.value === 'distance' ? distanceBlocked : null
+            const button = (
+              <Button
+                key={option.value}
+                aria-pressed={effectiveOrder === option.value}
+                // Solid for the chosen one: `subtle` against `outline` read
+                // backwards, the white button looking like the selected one.
+                variant={effectiveOrder === option.value ? 'solid' : 'outline'}
+                colorPalette="gray"
+                // aria-disabled, not disabled, so the tooltip saying why
+                // still opens on hover and focus.
+                aria-disabled={blocked !== null}
+                onClick={() => {
+                  if (blocked === null) chooseOrder(option.value)
+                }}
+              >
+                {option.label}
+              </Button>
+            )
+            return blocked === null ? (
+              button
+            ) : (
+              <Tooltip key={option.value} content={blocked}>
+                {button}
+              </Tooltip>
+            )
+          })}
         </ButtonGroup>
+        {activeRoot !== null && (
+          <Button
+            size="xs"
+            variant="subtle"
+            colorPalette="utahRed"
+            onClick={clearRoot}
+            aria-label={`Clear the root station, ${activeRoot}`}
+          >
+            Root: {activeRoot} <LuX />
+          </Button>
+        )}
         <Text fontSize="xs" color="fg.muted" fontVariantNumeric="tabular-nums">
           {traces.length} vertical channel{traces.length === 1 ? '' : 's'}
         </Text>
@@ -221,13 +333,35 @@ export function WaveformPanel({ triggerId, controlsSlot = null }: WaveformPanelP
         bg="bg.panel"
         py="2"
       >
-        <Suspense fallback={<Skeleton height="100%" rounded="md" />}>
-          <WaveformChart
-            traces={traces}
-            onReady={onReady}
-            onZoomedChange={setZoomed}
-          />
-        </Suspense>
+        {/* Positioned, so the lane menus can sit over the chart's gutter at
+            the pixel offsets the chart reports. */}
+        <Box position="relative" height="100%">
+          <Suspense fallback={<Skeleton height="100%" rounded="md" />}>
+            <WaveformChart
+              traces={traces}
+              onReady={onReady}
+              onZoomedChange={setZoomed}
+              rootKey={activeRoot ?? undefined}
+              onLanes={setLaneCentres}
+            />
+            {traces.map((trace) => {
+              const top = laneCentres[trace.lane]
+              if (top === undefined) return null
+              const key = channelStationKey(trace.channel)
+              return (
+                <LaneMenu
+                  key={trace.channel.streamId}
+                  streamId={trace.channel.streamId}
+                  top={top}
+                  isRoot={key === activeRoot}
+                  hasLocation={locations.has(key)}
+                  onSetRoot={() => setRoot(key)}
+                  onClearRoot={clearRoot}
+                />
+              )
+            })}
+          </Suspense>
+        </Box>
       </Box>
     </Stack>
   )

@@ -161,13 +161,18 @@ export interface Trace {
   channel: WaveformChannel
   /** Lane index, 0 at the top. */
   lane: number
+  /**
+   * Distance from the root station, km, when one is set and this station's
+   * location is known. Shown in the lane's label.
+   */
+  distanceKm?: number
 }
 
 /**
  * How the lanes are ordered.
  *
- * A trigger has no location, so there is no distance to sort by - the order
- * a record section normally takes. Two stand-ins:
+ * A trigger has no location of its own, so there is no source distance to
+ * sort by - the order a record section normally takes. Three stand-ins:
  *
  * - `peakTime` (the default): by when each trace reaches its largest
  *   amplitude. For a local event the nearest stations peak first, so the
@@ -176,18 +181,53 @@ export interface Trace {
  *   trace's peak, so this is a way of looking, not a measurement.
  * - `station`: alphabetical. Predictable; a station is always in the same
  *   place from one trigger to the next.
+ * - `distance`: nearest first from a root station the analyst picks - "if it
+ *   started near here, this is the order it would arrive in".
  */
-export type TraceOrder = 'station' | 'peakTime'
+export type TraceOrder = 'peakTime' | 'station' | 'distance'
 
-export function buildRecordSection(channels: WaveformChannel[], order: TraceOrder): Trace[] {
+/** "NET.STA", the key station locations and distances are held under. */
+export function channelStationKey(channel: WaveformChannel): string {
+  return `${channel.network}.${channel.station}`
+}
+
+/**
+ * Orders the channels into lanes.
+ *
+ * @param distances km from the root station, by "NET.STA". Required for
+ *        `distance`; with any other order it only labels the lanes. A
+ *        station with no known location sinks to the bottom of a distance
+ *        ordering rather than claiming a position it cannot justify.
+ */
+export function buildRecordSection(
+  channels: WaveformChannel[],
+  order: TraceOrder,
+  distances?: ReadonlyMap<string, number>,
+): Trace[] {
   const byStation = (a: WaveformChannel, b: WaveformChannel) =>
     a.station.localeCompare(b.station) ||
     a.network.localeCompare(b.network) ||
     a.streamId.localeCompare(b.streamId)
-  const sorted = [...channels].sort(
-    order === 'peakTime' ? (a, b) => a.peakMs - b.peakMs || byStation(a, b) : byStation,
-  )
-  return sorted.map((channel, lane) => ({ channel, lane }))
+  const distanceOf = (channel: WaveformChannel) => distances?.get(channelStationKey(channel))
+
+  let compare: (a: WaveformChannel, b: WaveformChannel) => number = byStation
+  if (order === 'peakTime') {
+    compare = (a, b) => a.peakMs - b.peakMs || byStation(a, b)
+  } else if (order === 'distance') {
+    compare = (a, b) => {
+      const da = distanceOf(a)
+      const db = distanceOf(b)
+      if (da === undefined || db === undefined) {
+        if (da !== db) return da === undefined ? 1 : -1
+        return byStation(a, b)
+      }
+      return da - db || byStation(a, b)
+    }
+  }
+
+  return [...channels]
+    .sort(compare)
+    .map((channel, lane) => ({ channel, lane, distanceKm: distanceOf(channel) }))
 }
 
 /**

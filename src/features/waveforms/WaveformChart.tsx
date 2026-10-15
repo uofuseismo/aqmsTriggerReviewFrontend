@@ -22,9 +22,15 @@ Chart.register(LineController, LineElement, PointElement, LinearScale, Decimatio
  * Labels sit beside the traces rather than above them, as they do in the
  * duty-review record section: at a compact lane height there is no gap
  * above a trace to put one in, and a label drawn over the trace hides the
- * start of the window. "PCCW" over "UU ENZ 01" fits in this at 11px.
+ * start of the window.
+ *
+ * Wide enough for the lane's menu button (see WaveformPanel) and then
+ * "PCCW 123 km" over "UU ENZ 01".
  */
-const GUTTER_PX = 76
+const GUTTER_PX = 100
+
+/** Where the label text starts: after the lane's menu button. */
+const LABEL_X = 24
 
 /** Space above the top lane and below the bottom one, in lanes. */
 const HEADROOM = 0.5
@@ -39,6 +45,7 @@ function palette(mode: 'light' | 'dark') {
         grid: '#3A3A3A',
         label: '#A1A1AA',
         station: '#E4E4E7',
+        root: '#F16A6A',
         laneBand: 'rgba(255,255,255,0.03)',
       }
     : {
@@ -46,6 +53,7 @@ function palette(mode: 'light' | 'dark') {
         grid: '#E4E4E7',
         label: '#52525B',
         station: '#18181B',
+        root: '#C92A2A',
         laneBand: 'rgba(0,0,0,0.025)',
       }
 }
@@ -60,6 +68,14 @@ export interface WaveformChartProps {
    * of the chart's construction.
    */
   onZoomedChange?: (zoomed: boolean) => void
+  /** "NET.STA" of the root station, whose lane label is marked. */
+  rootKey?: string
+  /**
+   * Told the vertical pixel centre of each lane, in lane order, whenever the
+   * layout changes - so controls can be placed over the gutter beside each
+   * label. Should be stable (a state setter is ideal).
+   */
+  onLanes?: (centres: number[]) => void
 }
 
 /**
@@ -70,7 +86,13 @@ export interface WaveformChartProps {
  * instance is easier to reason about than a component that rebuilds options
  * on every render.
  */
-export function WaveformChart({ traces, onReady, onZoomedChange }: WaveformChartProps) {
+export function WaveformChart({
+  traces,
+  onReady,
+  onZoomedChange,
+  rootKey,
+  onLanes,
+}: WaveformChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { colorMode } = useColorMode()
   const mode: 'light' | 'dark' = colorMode === 'dark' ? 'dark' : 'light'
@@ -119,7 +141,11 @@ export function WaveformChart({ traces, onReady, onZoomedChange }: WaveformChart
       },
     }
 
-    /** Lane labels, in the gutter to the left of the traces. */
+    /**
+     * Lane labels, in the gutter to the left of the traces: the station,
+     * its distance from the root when one is set, and the channel beneath.
+     * The root's own lane says "root" in place of a distance of zero.
+     */
     const overlay: Plugin<'line'> = {
       id: 'waveform-overlay',
       afterDatasetsDraw(chart) {
@@ -131,16 +157,46 @@ export function WaveformChart({ traces, onReady, onZoomedChange }: WaveformChart
         for (const trace of traces) {
           const centre = y.getPixelForValue(laneY(trace.lane))
           const { station, network, channel, locationCode } = trace.channel
+          const isRoot = rootKey !== undefined && `${network}.${station}` === rootKey
           ctx.font = '600 11px system-ui, sans-serif'
-          ctx.fillStyle = ink.station
+          ctx.fillStyle = isRoot ? ink.root : ink.station
           ctx.textBaseline = 'bottom'
-          ctx.fillText(station, 4, centre)
+          ctx.fillText(station, LABEL_X, centre)
+          if (isRoot || trace.distanceKm !== undefined) {
+            const after = LABEL_X + ctx.measureText(station).width + 4
+            ctx.font = isRoot ? '600 10px system-ui, sans-serif' : '10px system-ui, sans-serif'
+            ctx.fillStyle = isRoot ? ink.root : ink.label
+            ctx.fillText(isRoot ? 'root' : `${Math.round(trace.distanceKm ?? 0)} km`, after, centre)
+          }
           ctx.font = '10px ui-monospace, monospace'
           ctx.fillStyle = ink.label
           ctx.textBaseline = 'top'
-          ctx.fillText([network, channel, locationCode].filter(Boolean).join(' '), 4, centre + 1)
+          ctx.fillText(
+            [network, channel, locationCode].filter(Boolean).join(' '),
+            LABEL_X,
+            centre + 1,
+          )
         }
         ctx.restore()
+      },
+    }
+
+    /*
+      Where each lane is on screen, for the controls laid over the gutter.
+      Reported after every layout - a resize moves them - but only passed on
+      when they have actually changed, since a zoom lays out again too.
+    */
+    let reportedLanes = ''
+    const lanes: Plugin<'line'> = {
+      id: 'waveform-lanes',
+      afterLayout(chart) {
+        const centres = traces.map((trace) =>
+          Math.round(chart.scales.y.getPixelForValue(laneY(trace.lane))),
+        )
+        const key = centres.join(',')
+        if (key === reportedLanes) return
+        reportedLanes = key
+        onLanes?.(centres)
       },
     }
 
@@ -225,7 +281,7 @@ export function WaveformChart({ traces, onReady, onZoomedChange }: WaveformChart
       type: 'line',
       data: { datasets },
       options,
-      plugins: [bands, overlay],
+      plugins: [bands, overlay, lanes],
     })
 
     /*
@@ -242,7 +298,7 @@ export function WaveformChart({ traces, onReady, onZoomedChange }: WaveformChart
       onZoomedChange?.(false)
     })
     return () => chart.destroy()
-  }, [traces, mode, onReady, onZoomedChange])
+  }, [traces, mode, onReady, onZoomedChange, rootKey, onLanes])
 
   return <canvas ref={canvasRef} aria-label="Waveform record section" role="img" />
 }

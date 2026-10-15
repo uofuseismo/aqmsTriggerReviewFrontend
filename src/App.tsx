@@ -9,6 +9,7 @@ import { TriggerListPage } from './features/triggers/TriggerListPage'
 import { TriggerReviewPage } from './features/triggers/TriggerReviewPage'
 import { DecisionQueueProvider } from './features/triggers/DecisionQueueProvider'
 import { TriggersProvider } from './features/triggers/TriggersProvider'
+import { StationsProvider } from './features/stations/StationsProvider'
 
 /**
  * The review page, reset per trigger, so a payload that breaks the page for
@@ -39,28 +40,33 @@ export default function App() {
   // place survives signing back in.
   return (
     <>
-      {/* Above the router: the list outlives any one page, so opening a
-          trigger and coming back does not re-fetch it. */}
-      <TriggersProvider>
-        {/* Inside the trigger list, which it hides decided triggers from;
-            above the routes, so a decision outlives the page it was made on. */}
-        <DecisionQueueProvider>
-          <AppShell>
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  <ErrorBoundary label="The trigger list">
-                    <TriggerListPage />
-                  </ErrorBoundary>
-                }
-              />
-              <Route path="/triggers/:triggerId" element={<ReviewRoute />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Routes>
-          </AppShell>
-        </DecisionQueueProvider>
-      </TriggersProvider>
+      {/* Station locations load once, as soon as the analyst is signed in:
+          they change on the scale of months, and distance ordering wants
+          them ready before the first trigger is opened. */}
+      <StationsProvider>
+        {/* Above the router: the list outlives any one page, so opening a
+            trigger and coming back does not re-fetch it. */}
+        <TriggersProvider>
+          {/* Inside the trigger list, which it hides decided triggers from;
+              above the routes, so a decision outlives the page it was made on. */}
+          <DecisionQueueProvider>
+            <AppShell>
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <ErrorBoundary label="The trigger list">
+                      <TriggerListPage />
+                    </ErrorBoundary>
+                  }
+                />
+                <Route path="/triggers/:triggerId" element={<ReviewRoute />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Routes>
+            </AppShell>
+          </DecisionQueueProvider>
+        </TriggersProvider>
+      </StationsProvider>
       <SessionSentinel />
     </>
   )
