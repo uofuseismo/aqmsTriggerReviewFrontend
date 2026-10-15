@@ -1,11 +1,12 @@
 import { Avatar, Box, IconButton, Menu, Portal, Stack, Text } from '@chakra-ui/react'
 import { Suspense, lazy, useId, useState } from 'react'
-import { LuLogOut, LuUsers } from 'react-icons/lu'
+import { LuLogOut, LuSettings, LuUsers } from 'react-icons/lu'
 import { formatCountdownCoarse } from '../auth/formatCountdown'
 import { PermissionBadge } from './PermissionBadge'
 import { useAuth } from '../auth/useAuth'
 import { useSessionClock } from '../auth/useSessionClock'
 import { useIsWideScreen } from '../hooks/useMediaQuery'
+import { SettingsDialog } from '../features/settings/SettingsDialog'
 import { Tooltip } from './ui/Tooltip'
 
 /**
@@ -51,6 +52,7 @@ function SessionRemaining() {
 export function UserMenu() {
   const { user, permission, signOut, can } = useAuth()
   const isWide = useIsWideScreen()
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [usersOpen, setUsersOpen] = useState(false)
   /** Kept mounted after the first open so closing still animates. */
   const [usersEverOpened, setUsersEverOpened] = useState(false)
@@ -72,6 +74,7 @@ export function UserMenu() {
         positioning={{ placement: 'bottom-end' }}
         onSelect={(details) => {
           if (details.value === 'sign-out') signOut()
+          if (details.value === 'settings') setSettingsOpen(true)
           if (details.value === 'users') {
             setUsersEverOpened(true)
             setUsersOpen(true)
@@ -79,7 +82,7 @@ export function UserMenu() {
         }}
       >
         {/* An initial in a circle says whose it is, not what it does. */}
-        <Tooltip ids={{ trigger }} content="Account · sign out">
+        <Tooltip ids={{ trigger }} content="Account · settings, sign out">
           <Menu.Trigger asChild>
             <IconButton
               variant="ghost"
@@ -115,6 +118,11 @@ export function UserMenu() {
                 <LuLogOut /> Sign out
               </Menu.Item>
 
+              <Menu.Separator />
+              <Menu.Item value="settings">
+                <LuSettings /> Settings
+              </Menu.Item>
+
               {canManageUsers && (
                 <>
                   <Menu.Separator />
@@ -128,6 +136,7 @@ export function UserMenu() {
         </Portal>
       </Menu.Root>
 
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {/* Never mounted - and its chunk never fetched - unless an administrator
           on a wide screen actually opens it. The backend gates the route
           regardless; this only keeps the UI and the download honest. */}

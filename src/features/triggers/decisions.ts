@@ -18,22 +18,18 @@ export type DecisionSide = 'reject' | 'accept'
  *   so it is hidden rather than erased.
  * - `preset` is one of the backend's fast-track retypes, which fix the event
  *   and geographic type server side and take no body:
- *     sonic     -> (sonic, local)
+ *     local     -> (earthquake, local)
  *     regional  -> (earthquake, regional)
  *     teleseism -> (earthquake, teleseismic)
- * - `retype` names both types itself, in the backend's serialised spellings
- *   (serialize.cpp), not AQMS's codes. Only Local uses it - there is no
- *   preset for a local earthquake.
+ *     sonic     -> (sonic, local)
+ *
+ * The backend's general POST /subnet-triggers/<id>/retype, which takes both
+ * types in the body, is not used: every decision has a preset.
  */
 export type DecisionRequest =
   | { route: 'accept' }
   | { route: 'delete' }
-  | { route: 'preset'; preset: 'sonic' | 'regional' | 'teleseism' }
-  | {
-      route: 'retype'
-      eventType: 'earthquake'
-      geographicType: 'local'
-    }
+  | { route: 'preset'; preset: 'local' | 'regional' | 'teleseism' | 'sonic' }
 
 export interface DecisionOption {
   value: Decision
@@ -100,7 +96,7 @@ export const ACCEPTANCES: DecisionOption[] = [
     value: 'local',
     label: 'Local',
     description: 'A local earthquake inside the network.',
-    request: { route: 'retype', eventType: 'earthquake', geographicType: 'local' },
+    request: { route: 'preset', preset: 'local' },
     key: 'l',
   },
 ]
@@ -134,11 +130,5 @@ export function decisionCall(
   if (request.route === 'delete') {
     return { path: `/subnet-triggers/${triggerId}/delete`, body: {} }
   }
-  if (request.route === 'preset') {
-    return { path: `/subnet-triggers/${triggerId}/retype/${request.preset}`, body: {} }
-  }
-  return {
-    path: `/subnet-triggers/${triggerId}/retype`,
-    body: { eventType: request.eventType, geographicType: request.geographicType },
-  }
+  return { path: `/subnet-triggers/${triggerId}/retype/${request.preset}`, body: {} }
 }

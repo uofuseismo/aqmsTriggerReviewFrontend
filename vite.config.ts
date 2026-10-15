@@ -13,7 +13,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.2:8090',
+        target: 'http://127.0.0.3:8091',
         changeOrigin: true,
         // The backend serves /auth/login at its root, so the prefix that
         // marks a request as API traffic is stripped before forwarding.

@@ -1,13 +1,13 @@
 import { parsePermission, type Permission } from './permissions'
 
 /**
- * The claims aqmsDutyReviewBackend puts in a token
+ * The claims aqmsTriggerReviewBackend puts in a token
  * (see src/auth/jsonWebToken.cpp).
  */
 export interface TokenClaims {
   /** `sub` - the authenticated user. The backend rejects a token without one. */
   user: string
-  /** `iss` - always "aqmsDutyReviewBackend". */
+  /** `iss` - the backend's configured issuer. Not checked here. */
   issuer?: string
   /** `iat`, in seconds since the epoch. */
   issuedAt?: number
