@@ -130,6 +130,23 @@ export function UserManagementDialog({
     return null
   }
 
+  /**
+   * Why a password reset might not be offered.
+   *
+   * A reset makes the account provisional, and a provisional administrator
+   * cannot act, so resetting the only administrator - yourself included - is
+   * a lockout. The database refuses it (forbid_last_admin_removal); this only
+   * avoids offering it, and points you at the change that does work.
+   */
+  const resetBlockedBecause = (candidate: DrpUser): string | null => {
+    if (parsePermission(candidate.permission) === 'admin' && lastAdministrator) {
+      return candidate.name === me
+        ? 'The only administrator cannot be reset - use Settings to change your password'
+        : 'The only administrator cannot be reset'
+    }
+    return null
+  }
+
   const close = (next: boolean) => {
     if (!next) {
       setCreated(null)
@@ -267,6 +284,7 @@ export function UserManagementDialog({
                         {users.map((row) => {
                           const permission = parsePermission(row.permission)
                           const blocked = deleteBlockedBecause(row)
+                          const resetBlocked = resetBlockedBecause(row)
                           const rowBusy = busy === row.name
                           return (
                             <Table.Row key={row.name}>
@@ -305,19 +323,18 @@ export function UserManagementDialog({
                               </Table.Cell>
                               <Table.Cell textAlign="end" whiteSpace="nowrap">
                                 {/*
-                                  Reset is offered on every row, including the
-                                  last administrator and yourself: forgetting
-                                  your own password is the commonest reason to
-                                  need this, and unlike deletion it takes
-                                  nothing away that cannot be handed back.
+                                  Reset is offered on every row, yourself
+                                  included - forgetting your own password is the
+                                  commonest reason to need it - except the only
+                                  administrator, whom a reset would lock out.
                                 */}
-                                <Tooltip content={`Reset ${row.name}'s password`}>
+                                <Tooltip content={resetBlocked ?? `Reset ${row.name}'s password`}>
                                   <IconButton
                                     size="xs"
                                     variant="ghost"
-                                    aria-label={`Reset ${row.name}'s password`}
-                                    aria-disabled={rowBusy}
-                                    onClick={() => { if (!rowBusy) setConfirmReset(row) }}
+                                    aria-label={resetBlocked ?? `Reset ${row.name}'s password`}
+                                    aria-disabled={resetBlocked !== null || rowBusy}
+                                    onClick={() => { if (!resetBlocked && !rowBusy) setConfirmReset(row) }}
                                   >
                                     <LuKeyRound />
                                   </IconButton>
